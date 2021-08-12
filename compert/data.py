@@ -4,6 +4,7 @@ import warnings
 import torch
 
 import numpy as np
+from anndata import AnnData
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 import scanpy as sc
@@ -43,7 +44,7 @@ class Dataset:
                  cell_type_key,
                  split_key='split'):
 
-        data = sc.read(fname)
+        data: AnnData = sc.read(fname)
 
         self.perturbation_key = perturbation_key
         self.dose_key = dose_key

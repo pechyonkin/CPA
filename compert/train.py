@@ -1,23 +1,23 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 
-import os
-import json
 import argparse
-
-import torch
-import numpy as np
+import json
+import os
+import time
 from collections import defaultdict
+from typing import Dict
 
-from compert.data import load_dataset_splits
-from compert.model import ComPert
-
-from sklearn.metrics import r2_score, balanced_accuracy_score, make_scorer
+import numpy as np
+import torch
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import r2_score, balanced_accuracy_score, make_scorer
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 
-import time
+from compert.data import load_dataset_splits, SubDataset
+from compert.model import ComPert
+
 
 def pjson(s):
     """
@@ -164,7 +164,7 @@ def prepare_compert(args, state_dict=None):
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    datasets = load_dataset_splits(
+    datasets: Dict[str, SubDataset] = load_dataset_splits(
         args["dataset_path"],
         args["perturbation_key"],
         args["dose_key"],
@@ -194,24 +194,24 @@ def train_compert(args, return_model=False):
     Trains a ComPert autoencoder
     """
 
-    autoencoder, datasets = prepare_compert(args)
+    compert, datasets = prepare_compert(args)
 
     datasets.update({
         "loader_tr": torch.utils.data.DataLoader(
                         datasets["training"],
-                        batch_size=autoencoder.hparams["batch_size"],
+                        batch_size=compert.hparams["batch_size"],
                         shuffle=True)
     })
 
     pjson({"training_args": args})
-    pjson({"autoencoder_params": autoencoder.hparams})
+    pjson({"autoencoder_params": compert.hparams})
 
     start_time = time.time()
     for epoch in range(args["max_epochs"]):
         epoch_training_stats = defaultdict(float)
 
         for genes, drugs, cell_types in datasets["loader_tr"]:
-            minibatch_training_stats = autoencoder.update(
+            minibatch_training_stats = compert.update(
                 genes, drugs, cell_types)
 
             for key, val in minibatch_training_stats.items():
@@ -219,13 +219,13 @@ def train_compert(args, return_model=False):
 
         for key, val in epoch_training_stats.items():
             epoch_training_stats[key] = val / len(datasets["loader_tr"])
-            if not (key in autoencoder.history.keys()):
-                autoencoder.history[key] = []
-            autoencoder.history[key].append(val)
-        autoencoder.history['epoch'].append(epoch)
+            if not (key in compert.history.keys()):
+                compert.history[key] = []
+            compert.history[key].append(val)
+        compert.history['epoch'].append(epoch)
 
         ellapsed_minutes = (time.time() - start_time) / 60
-        autoencoder.history['elapsed_time_min'] = ellapsed_minutes
+        compert.history['elapsed_time_min'] = ellapsed_minutes
 
         # decay learning rate if necessary
         # also check stopping condition: patience ran out OR
@@ -234,12 +234,12 @@ def train_compert(args, return_model=False):
             (epoch == args["max_epochs"] - 1)
 
         if (epoch % args["checkpoint_freq"]) == 0 or stop:
-            evaluation_stats = evaluate(autoencoder, datasets)
+            evaluation_stats = evaluate(compert, datasets)
             for key, val in evaluation_stats.items():
-                if not (key in autoencoder.history.keys()):
-                    autoencoder.history[key] = []
-                autoencoder.history[key].append(val)
-            autoencoder.history['stats_epoch'].append(epoch)
+                if not (key in compert.history.keys()):
+                    compert.history[key] = []
+                compert.history[key].append(val)
+            compert.history['stats_epoch'].append(epoch)
 
             pjson({
                 "epoch": epoch,
@@ -249,21 +249,21 @@ def train_compert(args, return_model=False):
             })
 
             torch.save(
-                (autoencoder.state_dict(), args, autoencoder.history),
+                (compert.state_dict(), args, compert.history),
                 os.path.join(
                     args["save_dir"],
                     "model_seed={}_epoch={}.pt".format(args["seed"], epoch)))
 
             pjson({"model_saved": "model_seed={}_epoch={}.pt\n".format(
                 args["seed"], epoch)})
-            stop = stop or autoencoder.early_stopping(
+            stop = stop or compert.early_stopping(
                 np.mean(evaluation_stats["test"]))
             if stop:
                 pjson({"early_stop": epoch})
                 break
 
     if return_model:
-        return autoencoder, datasets
+        return compert, datasets
 
 
 def parse_arguments():
