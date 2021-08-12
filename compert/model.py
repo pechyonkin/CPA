@@ -4,6 +4,7 @@ import json
 import torch
 import numpy as np
 
+
 class NBLoss(torch.nn.Module):
     def __init__(self):
         super(NBLoss, self).__init__()
@@ -34,14 +35,19 @@ class NBLoss(torch.nn.Module):
         if theta.ndimension() == 1:
             # In this case, we reshape theta for broadcasting
             theta = theta.view(1, theta.size(0))
-        t1 = torch.lgamma(theta + eps) + torch.lgamma(y + 1.0) -\
-            torch.lgamma(y + theta + eps)
-        t2 = (theta + y) * torch.log(1.0 + (mu / (theta + eps))) +\
-            (y * (torch.log(theta + eps) - torch.log(mu + eps)))
+        t1 = (
+            torch.lgamma(theta + eps)
+            + torch.lgamma(y + 1.0)
+            - torch.lgamma(y + theta + eps)
+        )
+        t2 = (theta + y) * torch.log(1.0 + (mu / (theta + eps))) + (
+            y * (torch.log(theta + eps) - torch.log(mu + eps))
+        )
         final = t1 + t2
         final = _nan2inf(final)
 
         return torch.mean(final)
+
 
 def _nan2inf(x):
     return torch.where(torch.isnan(x), torch.zeros_like(x) + np.inf, x)
@@ -83,8 +89,9 @@ class MLP(torch.nn.Module):
             layers += [
                 torch.nn.Linear(sizes[s], sizes[s + 1]),
                 torch.nn.BatchNorm1d(sizes[s + 1])
-                if batch_norm and s < len(sizes) - 2 else None,
-                torch.nn.ReLU()
+                if batch_norm and s < len(sizes) - 2
+                else None,
+                torch.nn.ReLU(),
             ]
 
         layers = [l for l in layers if l is not None][:-1]
@@ -100,9 +107,9 @@ class MLP(torch.nn.Module):
 
     def forward(self, x):
         if self.activation == "ReLU":
-           x = self.network(x)
-           dim = x.size(1) // 2
-           return torch.cat((self.relu(x[:, :dim]), x[:, dim:]), dim=1)
+            x = self.network(x)
+            dim = x.size(1) // 2
+            return torch.cat((self.relu(x[:, :dim]), x[:, dim:]), dim=1)
         return self.network(x)
 
 
@@ -112,7 +119,7 @@ class GeneralizedSigmoid(torch.nn.Module):
     drug perurbations.
     """
 
-    def __init__(self, dim, device, nonlin='sigmoid'):
+    def __init__(self, dim, device, nonlin="sigmoid"):
         """Sigmoid modeling of continuous variable.
         Params
         ------
@@ -122,33 +129,34 @@ class GeneralizedSigmoid(torch.nn.Module):
         super(GeneralizedSigmoid, self).__init__()
         self.nonlin = nonlin
         self.beta = torch.nn.Parameter(
-            torch.ones(1, dim, device=device),
-            requires_grad=True
+            torch.ones(1, dim, device=device), requires_grad=True
         )
         self.bias = torch.nn.Parameter(
-            torch.zeros(1, dim, device=device),
-            requires_grad=True
+            torch.zeros(1, dim, device=device), requires_grad=True
         )
 
     def forward(self, x):
-        if self.nonlin == 'logsigm':
+        if self.nonlin == "logsigm":
             c0 = self.bias.sigmoid()
             return (torch.log1p(x) * self.beta + self.bias).sigmoid() - c0
-        elif self.nonlin == 'sigm':
+        elif self.nonlin == "sigm":
             c0 = self.bias.sigmoid()
             return (x * self.beta + self.bias).sigmoid() - c0
         else:
             return x
 
     def one_drug(self, x, i):
-        if self.nonlin == 'logsigm':
+        if self.nonlin == "logsigm":
             c0 = self.bias[0][i].sigmoid()
-            return (torch.log1p(x) * self.beta[0][i] + self.bias[0][i]).sigmoid() - c0
-        elif self.nonlin == 'sigm':
+            return (
+                torch.log1p(x) * self.beta[0][i] + self.bias[0][i]
+            ).sigmoid() - c0
+        elif self.nonlin == "sigm":
             c0 = self.bias[0][i].sigmoid()
             return (x * self.beta[0][i] + self.bias[0][i]).sigmoid() - c0
         else:
             return x
+
 
 class ComPert(torch.nn.Module):
     """
@@ -156,17 +164,18 @@ class ComPert(torch.nn.Module):
     """
 
     def __init__(
-            self,
-            num_genes,
-            num_drugs,
-            num_cell_types,
-            device="cpu",
-            seed=0,
-            patience=5,
-            loss_ae='gauss',
-            doser_type='logsigm',
-            decoder_activation='linear',
-            hparams=""):
+        self,
+        num_genes,
+        num_drugs,
+        num_cell_types,
+        device="cpu",
+        seed=0,
+        patience=5,
+        loss_ae="gauss",
+        doser_type="logsigm",
+        decoder_activation="linear",
+        hparams="",
+    ):
         super(ComPert, self).__init__()
         # set generic attributes
         self.num_genes = num_genes
@@ -185,51 +194,62 @@ class ComPert(torch.nn.Module):
 
         # set models
         self.encoder = MLP(
-            [num_genes] +
-            [self.hparams["autoencoder_width"]] *
-            self.hparams["autoencoder_depth"] +
-            [self.hparams["dim"]])
+            [num_genes]
+            + [self.hparams["autoencoder_width"]]
+            * self.hparams["autoencoder_depth"]
+            + [self.hparams["dim"]]
+        )
 
         self.decoder = MLP(
-            [self.hparams["dim"]] +
-            [self.hparams["autoencoder_width"]] *
-            self.hparams["autoencoder_depth"] +
-            [num_genes * 2], last_layer_act=decoder_activation)
+            [self.hparams["dim"]]
+            + [self.hparams["autoencoder_width"]]
+            * self.hparams["autoencoder_depth"]
+            + [num_genes * 2],
+            last_layer_act=decoder_activation,
+        )
 
         self.adversary_drugs = MLP(
-            [self.hparams["dim"]] +
-            [self.hparams["adversary_width"]] *
-            self.hparams["adversary_depth"] +
-            [num_drugs])
+            [self.hparams["dim"]]
+            + [self.hparams["adversary_width"]]
+            * self.hparams["adversary_depth"]
+            + [num_drugs]
+        )
 
         self.adversary_cell_types = MLP(
-            [self.hparams["dim"]] +
-            [self.hparams["adversary_width"]] *
-            self.hparams["adversary_depth"] +
-            [num_cell_types])
+            [self.hparams["dim"]]
+            + [self.hparams["adversary_width"]]
+            * self.hparams["adversary_depth"]
+            + [num_cell_types]
+        )
 
         # set dosers
         self.doser_type = doser_type
-        if doser_type == 'mlp':
+        if doser_type == "mlp":
             self.dosers = torch.nn.ModuleList()
             for _ in range(num_drugs):
                 self.dosers.append(
-                    MLP([1] +
-                        [self.hparams["dosers_width"]] *
-                        self.hparams["dosers_depth"] +
-                        [1],
-                        batch_norm=False))
+                    MLP(
+                        [1]
+                        + [self.hparams["dosers_width"]]
+                        * self.hparams["dosers_depth"]
+                        + [1],
+                        batch_norm=False,
+                    )
+                )
         else:
-            self.dosers = GeneralizedSigmoid(num_drugs, self.device,
-            nonlin=doser_type)
+            self.dosers = GeneralizedSigmoid(
+                num_drugs, self.device, nonlin=doser_type
+            )
 
         self.drug_embeddings = torch.nn.Embedding(
-            num_drugs, self.hparams["dim"])
+            num_drugs, self.hparams["dim"]
+        )
         self.cell_type_embeddings = torch.nn.Embedding(
-            num_cell_types, self.hparams["dim"])
+            num_cell_types, self.hparams["dim"]
+        )
 
         # losses
-        if self.loss_ae == 'nb':
+        if self.loss_ae == "nb":
             self.loss_autoencoder = NBLoss()
         else:
             self.loss_autoencoder = GaussianLoss()
@@ -241,35 +261,41 @@ class ComPert(torch.nn.Module):
 
         # optimizers
         self.optimizer_autoencoder = torch.optim.Adam(
-            list(self.encoder.parameters()) +
-            list(self.decoder.parameters()) +
-            list(self.drug_embeddings.parameters()) +
-            list(self.cell_type_embeddings.parameters()),
+            list(self.encoder.parameters())
+            + list(self.decoder.parameters())
+            + list(self.drug_embeddings.parameters())
+            + list(self.cell_type_embeddings.parameters()),
             lr=self.hparams["autoencoder_lr"],
-            weight_decay=self.hparams["autoencoder_wd"])
+            weight_decay=self.hparams["autoencoder_wd"],
+        )
 
         self.optimizer_adversaries = torch.optim.Adam(
-            list(self.adversary_drugs.parameters()) +
-            list(self.adversary_cell_types.parameters()),
+            list(self.adversary_drugs.parameters())
+            + list(self.adversary_cell_types.parameters()),
             lr=self.hparams["adversary_lr"],
-            weight_decay=self.hparams["adversary_wd"])
+            weight_decay=self.hparams["adversary_wd"],
+        )
 
         self.optimizer_dosers = torch.optim.Adam(
             self.dosers.parameters(),
             lr=self.hparams["dosers_lr"],
-            weight_decay=self.hparams["dosers_wd"])
+            weight_decay=self.hparams["dosers_wd"],
+        )
 
         # learning rate schedulers
         self.scheduler_autoencoder = torch.optim.lr_scheduler.StepLR(
-            self.optimizer_autoencoder, step_size=self.hparams["step_size_lr"])
+            self.optimizer_autoencoder, step_size=self.hparams["step_size_lr"]
+        )
 
         self.scheduler_adversary = torch.optim.lr_scheduler.StepLR(
-            self.optimizer_adversaries, step_size=self.hparams["step_size_lr"])
+            self.optimizer_adversaries, step_size=self.hparams["step_size_lr"]
+        )
 
         self.scheduler_dosers = torch.optim.lr_scheduler.StepLR(
-            self.optimizer_dosers, step_size=self.hparams["step_size_lr"])
+            self.optimizer_dosers, step_size=self.hparams["step_size_lr"]
+        )
 
-        self.history = {'epoch': [], 'stats_epoch': []}
+        self.history = {"epoch": [], "stats_epoch": []}
 
     def set_hparams_(self, seed, hparams):
         """
@@ -278,46 +304,60 @@ class ComPert(torch.nn.Module):
         hyper-parameters specified in the JSON string `hparams`.
         """
 
-        default = (seed == 0)
+        default = seed == 0
         torch.manual_seed(seed)
         np.random.seed(seed)
         self.hparams = {
-            "dim": 256 if default else
-            int(np.random.choice([128, 256, 512])),
-            "dosers_width": 64 if default else
-            int(np.random.choice([32, 64, 128])),
-            "dosers_depth": 2 if default else
-            int(np.random.choice([1, 2, 3])),
-            "dosers_lr": 1e-3 if default else
-            float(10**np.random.uniform(-4, -2)),
-            "dosers_wd": 1e-7 if default else
-            float(10**np.random.uniform(-8, -5)),
-            "autoencoder_width": 512 if default else
-            int(np.random.choice([256, 512, 1024])),
-            "autoencoder_depth": 4 if default else
-            int(np.random.choice([3, 4, 5])),
-            "adversary_width": 128 if default else
-            int(np.random.choice([64, 128, 256])),
-            "adversary_depth": 3 if default else
-            int(np.random.choice([2, 3, 4])),
-            "reg_adversary": 5 if default else
-            float(10**np.random.uniform(-2, 2)),
-            "penalty_adversary": 3 if default else
-            float(10**np.random.uniform(-2, 1)),
-            "autoencoder_lr": 1e-3 if default else
-            float(10**np.random.uniform(-4, -2)),
-            "adversary_lr": 3e-4 if default else
-            float(10**np.random.uniform(-5, -3)),
-            "autoencoder_wd": 1e-6 if default else
-            float(10**np.random.uniform(-8, -4)),
-            "adversary_wd": 1e-4 if default else
-            float(10**np.random.uniform(-6, -3)),
-            "adversary_steps": 3 if default else
-            int(np.random.choice([1, 2, 3, 4, 5])),
-            "batch_size": 128 if default else
-            int(np.random.choice([64, 128, 256, 512])),
-            "step_size_lr": 45 if default else
-            int(np.random.choice([15, 25, 45])),
+            "dim": 256 if default else int(np.random.choice([128, 256, 512])),
+            "dosers_width": 64
+            if default
+            else int(np.random.choice([32, 64, 128])),
+            "dosers_depth": 2 if default else int(np.random.choice([1, 2, 3])),
+            "dosers_lr": 1e-3
+            if default
+            else float(10 ** np.random.uniform(-4, -2)),
+            "dosers_wd": 1e-7
+            if default
+            else float(10 ** np.random.uniform(-8, -5)),
+            "autoencoder_width": 512
+            if default
+            else int(np.random.choice([256, 512, 1024])),
+            "autoencoder_depth": 4
+            if default
+            else int(np.random.choice([3, 4, 5])),
+            "adversary_width": 128
+            if default
+            else int(np.random.choice([64, 128, 256])),
+            "adversary_depth": 3
+            if default
+            else int(np.random.choice([2, 3, 4])),
+            "reg_adversary": 5
+            if default
+            else float(10 ** np.random.uniform(-2, 2)),
+            "penalty_adversary": 3
+            if default
+            else float(10 ** np.random.uniform(-2, 1)),
+            "autoencoder_lr": 1e-3
+            if default
+            else float(10 ** np.random.uniform(-4, -2)),
+            "adversary_lr": 3e-4
+            if default
+            else float(10 ** np.random.uniform(-5, -3)),
+            "autoencoder_wd": 1e-6
+            if default
+            else float(10 ** np.random.uniform(-8, -4)),
+            "adversary_wd": 1e-4
+            if default
+            else float(10 ** np.random.uniform(-6, -3)),
+            "adversary_steps": 3
+            if default
+            else int(np.random.choice([1, 2, 3, 4, 5])),
+            "batch_size": 128
+            if default
+            else int(np.random.choice([64, 128, 256, 512])),
+            "step_size_lr": 45
+            if default
+            else int(np.random.choice([15, 25, 45])),
         }
 
         # the user may fix some hparams
@@ -345,15 +385,16 @@ class ComPert(torch.nn.Module):
         dose-response curve.
         """
 
-        if self.doser_type == 'mlp':
+        if self.doser_type == "mlp":
             doses = []
             for d in range(drugs.size(1)):
                 this_drug = drugs[:, d].view(-1, 1)
-                doses.append(self.dosers[d](this_drug).sigmoid() * this_drug.gt(0))
+                doses.append(
+                    self.dosers[d](this_drug).sigmoid() * this_drug.gt(0)
+                )
             return torch.cat(doses, 1) @ self.drug_embeddings.weight
         else:
             return self.dosers(drugs) @ self.drug_embeddings.weight
-
 
     def predict(self, genes, drugs, cell_types, return_latent_basal=False):
         """
@@ -373,15 +414,16 @@ class ComPert(torch.nn.Module):
 
         # convert variance estimates to a positive value in [1e-3, \infty)
         dim = gene_reconstructions.size(1) // 2
-        gene_reconstructions[:, dim:] =\
+        gene_reconstructions[:, dim:] = (
             gene_reconstructions[:, dim:].exp().add(1).log().add(1e-3)
+        )
 
-        if self.loss_ae == 'nb':
-            gene_reconstructions[:, :dim] =\
+        if self.loss_ae == "nb":
+            gene_reconstructions[:, :dim] = (
                 gene_reconstructions[:, :dim].exp().add(1).log().add(1e-4)
+            )
             # gene_reconstructions[:, :dim] = torch.clamp(gene_reconstructions[:, :dim], min=1e-4, max=1e4)
             # gene_reconstructions[:, dim:] = torch.clamp(gene_reconstructions[:, dim:], min=1e-6, max=1e6)
-
 
         if return_latent_basal:
             return gene_reconstructions, latent_basal
@@ -413,52 +455,65 @@ class ComPert(torch.nn.Module):
         genes, drugs, cell_types = self.move_inputs_(genes, drugs, cell_types)
 
         gene_reconstructions, latent_basal = self.predict(
-            genes, drugs, cell_types, return_latent_basal=True)
+            genes, drugs, cell_types, return_latent_basal=True
+        )
 
-        reconstruction_loss = self.loss_autoencoder(
-            gene_reconstructions, genes)
+        reconstruction_loss = self.loss_autoencoder(gene_reconstructions, genes)
 
-        adversary_drugs_predictions = self.adversary_drugs(
-            latent_basal)
+        adversary_drugs_predictions = self.adversary_drugs(latent_basal)
         adversary_drugs_loss = self.loss_adversary_drugs(
-            adversary_drugs_predictions, drugs.gt(0).float())
+            adversary_drugs_predictions, drugs.gt(0).float()
+        )
 
         adversary_cell_types_predictions = self.adversary_cell_types(
-            latent_basal)
+            latent_basal
+        )
         adversary_cell_types_loss = self.loss_adversary_cell_types(
-            adversary_cell_types_predictions, cell_types.argmax(1))
+            adversary_cell_types_predictions, cell_types.argmax(1)
+        )
 
         # two place-holders for when adversary is not executed
         adversary_drugs_penalty = torch.Tensor([0])
         adversary_cell_types_penalty = torch.Tensor([0])
 
         if self.iteration % self.hparams["adversary_steps"]:
-            adversary_drugs_penalty = torch.autograd.grad(
-                adversary_drugs_predictions.sum(),
-                latent_basal,
-                create_graph=True)[0].pow(2).mean()
+            adversary_drugs_penalty = (
+                torch.autograd.grad(
+                    adversary_drugs_predictions.sum(),
+                    latent_basal,
+                    create_graph=True,
+                )[0]
+                .pow(2)
+                .mean()
+            )
 
-            adversary_cell_types_penalty = torch.autograd.grad(
-                adversary_cell_types_predictions.sum(),
-                latent_basal,
-                create_graph=True)[0].pow(2).mean()
+            adversary_cell_types_penalty = (
+                torch.autograd.grad(
+                    adversary_cell_types_predictions.sum(),
+                    latent_basal,
+                    create_graph=True,
+                )[0]
+                .pow(2)
+                .mean()
+            )
 
             self.optimizer_adversaries.zero_grad()
-            (adversary_drugs_loss +
-             self.hparams["penalty_adversary"] *
-             adversary_drugs_penalty +
-             adversary_cell_types_loss +
-             self.hparams["penalty_adversary"] *
-             adversary_cell_types_penalty).backward()
+            (
+                adversary_drugs_loss
+                + self.hparams["penalty_adversary"] * adversary_drugs_penalty
+                + adversary_cell_types_loss
+                + self.hparams["penalty_adversary"]
+                * adversary_cell_types_penalty
+            ).backward()
             self.optimizer_adversaries.step()
         else:
             self.optimizer_autoencoder.zero_grad()
             self.optimizer_dosers.zero_grad()
-            (reconstruction_loss -
-             self.hparams["reg_adversary"] *
-             adversary_drugs_loss -
-             self.hparams["reg_adversary"] *
-             adversary_cell_types_loss).backward()
+            (
+                reconstruction_loss
+                - self.hparams["reg_adversary"] * adversary_drugs_loss
+                - self.hparams["reg_adversary"] * adversary_cell_types_loss
+            ).backward()
             self.optimizer_autoencoder.step()
             self.optimizer_dosers.step()
 
@@ -469,7 +524,7 @@ class ComPert(torch.nn.Module):
             "loss_adv_drugs": adversary_drugs_loss.item(),
             "loss_adv_cell_types": adversary_cell_types_loss.item(),
             "penalty_adv_drugs": adversary_drugs_penalty.item(),
-            "penalty_adv_cell_types": adversary_cell_types_penalty.item()
+            "penalty_adv_cell_types": adversary_cell_types_penalty.item(),
         }
 
     @classmethod

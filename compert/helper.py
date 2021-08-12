@@ -3,6 +3,7 @@
 import scanpy as sc
 import pandas as pd
 
+
 def rank_genes_groups_by_cov(
     adata,
     groupby,
@@ -11,7 +12,7 @@ def rank_genes_groups_by_cov(
     pool_doses=False,
     n_genes=50,
     rankby_abs=True,
-    key_added='rank_genes_groups_cov',
+    key_added="rank_genes_groups_cov",
     return_dict=False,
 ):
 
@@ -68,23 +69,23 @@ def rank_genes_groups_by_cov(
     cov_categories = adata.obs[covariate].unique()
     for cov_cat in cov_categories:
         print(cov_cat)
-        #name of the control group in the groupby obs column
-        control_group_cov = '_'.join([cov_cat, control_group])
+        # name of the control group in the groupby obs column
+        control_group_cov = "_".join([cov_cat, control_group])
 
-        #subset adata to cells belonging to a covariate category
-        adata_cov = adata[adata.obs[covariate]==cov_cat]
+        # subset adata to cells belonging to a covariate category
+        adata_cov = adata[adata.obs[covariate] == cov_cat]
 
-        #compute DEGs
+        # compute DEGs
         sc.tl.rank_genes_groups(
             adata_cov,
             groupby=groupby,
             reference=control_group_cov,
             rankby_abs=rankby_abs,
-            n_genes=n_genes
+            n_genes=n_genes,
         )
 
-        #add entries to dictionary of gene sets
-        de_genes = pd.DataFrame(adata_cov.uns['rank_genes_groups']['names'])
+        # add entries to dictionary of gene sets
+        de_genes = pd.DataFrame(adata_cov.uns["rank_genes_groups"]["names"])
         for group in de_genes:
             gene_dict[group] = de_genes[group].tolist()
 
@@ -92,4 +93,3 @@ def rank_genes_groups_by_cov(
 
     if return_dict:
         return gene_dict
-
